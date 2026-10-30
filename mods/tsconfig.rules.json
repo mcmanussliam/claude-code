@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "temporary-rule-poc/api",
+    "temporary-rule-poc/types",
+    "temporary-rule-poc/hooks",
+    "temporary-rule-poc/tests",
+    "temporary-rule-example/hooks"
+  ],
+  "exclude": []
+}

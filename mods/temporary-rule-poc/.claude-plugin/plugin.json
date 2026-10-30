@@ -1,0 +1,8 @@
+{
+  "name": "temporary-rule-poc",
+  "version": "0.1.0",
+  "description": "Conversation-scoped rules with caller-owned $.rules utilities, adapted from claude-plugin-rules.",
+  "author": { "name": "Liam" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

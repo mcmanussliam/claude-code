@@ -1,0 +1,8 @@
+{
+  "name": "temporary-rule-example",
+  "version": "0.1.0",
+  "description": "Commands for trying the temporary $.rules API.",
+  "dependencies": [
+    "temporary-rule-poc"
+  ]
+}

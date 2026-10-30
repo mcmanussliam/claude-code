@@ -1,0 +1,4 @@
+{
+  "description": "Adds $.rules in engine.create and delivers temporary rules through instructions, matching file tools and mentions.",
+  "modules": ["./register.ts"]
+}

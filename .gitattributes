@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.sh text eol=lf
+mods/temporary-rule-poc/api/claude-code.d.ts linguist-generated=true
+mods/temporary-rule-poc/hooks/vendor/dependencies.js linguist-generated=true
