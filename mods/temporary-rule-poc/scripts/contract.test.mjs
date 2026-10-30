@@ -11,17 +11,27 @@ const native = [
   { path: '/memory/MEMORY.md', kind: 'memory', content: 'Memory.' },
 ]
 
-test('native instruction boundary preserves native files, parents, order and blocks', async () => {
+test('default resolution boundary preserves native files, parents, order and blocks', async () => {
   const h = await harness()
   assert.deepEqual(await h.dispatch('prompt.context', context(native)), context(native))
 })
 
-test('native attachments are unchanged and unknown instructions stay unknown', async () => {
+test('default attachments are unchanged and unknown instructions stay unknown', async () => {
   const h = await harness()
   assert.deepEqual(await h.dispatch('prompt.context', { blocks: [{ name: 'claudeMd', text: 'rewritten' }] }),
     { blocks: [{ name: 'claudeMd', text: 'rewritten' }] })
   assert.deepEqual(await h.dispatch('prompt.attachment', { type: 'nested_memory', origin: { kind: 'engine' }, text: 'Native.' }), { text: 'Native.' })
 })
+
+for (const order of ['default-first', 'temporary-first']) {
+  test(`temporary rules compose with default resolution in ${order} order`, async () => {
+    const h = await harness({ order })
+    await h.api('alpha').add({ name: 'style', content: 'Temporary.' })
+    const loaded = (await h.dispatch('prompt.context', context(native))).instructionFiles
+    assert.deepEqual(loaded.map(file => file.path), [native[0].path, native[1].path, 'rules:alpha/style', ...native.slice(2).map(file => file.path)])
+    assert.deepEqual(loaded.filter(file => file.path !== 'rules:alpha/style'), native)
+  })
+}
 
 test('add replaces by owner/name without duplicating the instruction', async () => {
   const h = await harness()
@@ -184,6 +194,185 @@ test('engine.create installs working backing methods, not dispatch-only placehol
   await raw.add({ name: 'again', content: 'Again.' })
   await raw.clear()
   assert.deepEqual(await raw.list(), [])
+})
+
+for (const order of ['default-first', 'temporary-first']) {
+  test(`default resolver loads recursive user/project markdown in ${order} order`, async () => {
+    const h = await harness({
+      order, env: { HOME: '/home/me' }, files: {
+        '/home/me/.claude/rules/personal.md': 'Personal.',
+        '/repo/.claude/rules/style.md': 'Project.',
+        '/repo/.claude/rules/deep/security.md': 'Security.',
+        '/repo/.claude/rules/ignored.txt': 'Not a rule.',
+      }
+    })
+    const loaded = (await h.dispatch('prompt.context', context(native))).instructionFiles
+    assert.deepEqual(loaded.filter(file => file.path.includes('/rules/')).map(file => [file.path, file.kind]), [
+      ['/home/me/.claude/rules/personal.md', 'user'],
+      ['/repo/.claude/rules/deep/security.md', 'project'],
+      ['/repo/.claude/rules/style.md', 'project'],
+    ])
+    assert.equal((await h.dispatch('tool.call', access())).context, undefined)
+  })
+}
+
+test('default scoped rules wait for a matching file and then deduplicate', async () => {
+  const h = await harness({ files: { '/repo/.claude/rules/ts.md': '---\npaths:\n  - src/**/*.{ts,tsx}\n---\nTypeScript.' } })
+  assert.deepEqual((await h.dispatch('prompt.context', context())).instructionFiles, [])
+  assert.equal((await h.dispatch('tool.call', access('Read', '/repo/README.md'))).context, undefined)
+  assert.deepEqual((await h.dispatch('tool.call', access())).context, ['Contents of /repo/.claude/rules/ts.md:\n\nTypeScript.'])
+  assert.equal((await h.dispatch('tool.call', access())).context, undefined)
+})
+
+test('nested rule directories are discovered on access and globs use their own base', async () => {
+  const h = await harness({
+    files: {
+      '/repo/packages/web/.claude/rules/general.md': 'Web.',
+      '/repo/packages/web/.claude/rules/ts.md': '---\npaths: src/**\n---\nWeb TS.',
+    }
+  })
+  assert.deepEqual((await h.dispatch('prompt.context', context())).instructionFiles, [])
+  const loaded = await h.dispatch('tool.call', access('Read', '/repo/packages/web/src/app.ts'))
+  assert.equal(loaded.context.length, 2)
+  assert.ok(loaded.context.some(text => text.includes('Web TS.')))
+  assert.equal((await h.dispatch('tool.call', access('Read', '/repo/src/elsewhere.ts'))).context, undefined)
+})
+
+test('default discovery preserves native rules already present by physical source path', async () => {
+  const file = { path: '/repo/.claude/rules/style.md', kind: 'project', content: 'Native style.' }
+  const h = await harness({ files: { [file.path]: 'Native style.' } })
+  const loaded = (await h.dispatch('prompt.context', context([...native, file]))).instructionFiles
+  assert.equal(loaded.filter(item => item.path === file.path).length, 1)
+  assert.deepEqual(loaded.filter(item => item.path !== file.path), native)
+})
+
+test('native scoped context already on a tool result is not appended again', async () => {
+  const h = await harness({ files: { '/repo/.claude/rules/ts.md': '---\npaths: src/**\n---\nScoped.' } })
+  await h.dispatch('prompt.context', context())
+  h.state.toolResult.context = ['Contents of /repo/.claude/rules/ts.md:\n\nScoped.']
+  assert.equal((await h.dispatch('tool.call', access())).context.length, 1)
+})
+
+test('default resolver honors exclusions against logical paths and symlink targets', async () => {
+  const h = await harness({
+    settings: { claudeMdExcludes: ['**/excluded.md', '/repo/shared/secret.md'] }, files: {
+      '/repo/.claude/rules/included.md': 'Included.',
+      '/repo/.claude/rules/excluded.md': 'Excluded.',
+      '/repo/shared/secret.md': 'Secret.',
+    }, links: { '/repo/.claude/rules/linked.md': '/repo/shared/secret.md' }
+  })
+  const loaded = (await h.dispatch('prompt.context', context())).instructionFiles
+  assert.deepEqual(loaded.map(file => file.content), ['Included.'])
+})
+
+test('default resolver handles symlink loops and skips unapproved external targets', async () => {
+  const h = await harness({
+    files: {
+      '/repo/.claude/rules/one.md': 'One.',
+      '/external/two.md': 'External.',
+    }, links: {
+      '/repo/.claude/rules/loop': '/repo/.claude/rules',
+      '/repo/.claude/rules/two.md': '/external/two.md',
+    }
+  })
+  assert.deepEqual((await h.dispatch('prompt.context', context())).instructionFiles.map(file => file.content), ['One.'])
+})
+
+test('default file edits, deletions and new files reconcile through the noun', async () => {
+  const h = await harness({ files: { '/repo/.claude/rules/one.md': 'First.' } })
+  await h.dispatch('prompt.context', context())
+  h.state.files['/repo/.claude/rules/one.md'] = 'Changed.'
+  assert.equal((await h.dispatch('prompt.context', context())).instructionFiles[0].content, 'Changed.')
+  delete h.state.files['/repo/.claude/rules/one.md']
+  h.state.files['/repo/.claude/rules/two.md'] = 'New.'
+  assert.deepEqual((await h.dispatch('prompt.context', context())).instructionFiles.map(file => file.content), ['New.'])
+})
+
+test('default parser treats malformed YAML as unconditional and strips comments outside code', async () => {
+  const h = await harness({
+    files: {
+      '/repo/.claude/rules/bad.md': '---\npaths: [\n---\nBody.\n<!-- private comment -->\n```html\n<!-- code -->\n```',
+    }
+  })
+  const loaded = (await h.dispatch('prompt.context', context())).instructionFiles[0]
+  assert.ok(loaded.content.includes('Body.'))
+  assert.equal(loaded.content.includes('private comment'), false)
+  assert.equal(loaded.content.includes('<!-- code -->'), true)
+})
+
+test('custom config directories and source selection are supported', async () => {
+  const h = await harness({
+    sources: 'user-only', env: { HOME: '/home/me', CLAUDE_CONFIG_DIR: '/config' }, files: {
+      '/config/rules/user.md': 'User config.',
+      '/repo/.claude/rules/project.md': 'Project.',
+    }
+  })
+  assert.deepEqual((await h.dispatch('prompt.context', context())).instructionFiles.map(file => file.content), ['User config.'])
+})
+
+test('default scoped rules reload after compaction and /clear', async () => {
+  const h = await harness({ files: { '/repo/.claude/rules/ts.md': '---\npaths: src/**\n---\nScoped.' } })
+  await h.dispatch('prompt.context', context())
+  await h.dispatch('tool.call', access())
+  await h.dispatch('session.compact', {})
+  assert.equal((await h.dispatch('tool.call', access())).context.length, 1)
+  await h.dispatch('session.end', { reason: 'clear', sessionId: 's1' })
+  h.state.sessionId = 's2'
+  await h.dispatch('prompt.context', context())
+  assert.equal((await h.dispatch('tool.call', access())).context.length, 1)
+})
+
+test('duplicate native/plugin rule frames are emitted once in either arrival order', async () => {
+  for (const origins of [['engine', 'plugin'], ['plugin', 'engine']]) {
+    const h = await harness({ files: { '/repo/.claude/rules/ts.md': '---\npaths: src/**\n---\nScoped.' } })
+    await h.dispatch('prompt.context', context())
+    const text = 'Contents of /repo/.claude/rules/ts.md:\n\nScoped.'
+    const origin = kind => kind === 'engine' ? { kind } : { kind, event: 'tool.call' }
+    assert.equal((await h.dispatch('prompt.attachment', { type: 'nested_memory', origin: origin(origins[0]), text })).text, text)
+    assert.equal((await h.dispatch('prompt.attachment', { type: 'nested_memory', origin: origin(origins[1]), text })).text, null)
+    assert.equal((await h.dispatch('prompt.attachment', { type: 'instructions', origin: { kind: 'engine' }, text: 'Managed content.' })).text, 'Managed content.')
+  }
+})
+
+test('reading a whole rule file marks it sent while a partial read does not', async () => {
+  for (const partial of [false, true]) {
+    const h = await harness({ files: { '/repo/.claude/rules/ts.md': '---\npaths: src/**\n---\nScoped.' } })
+    await h.dispatch('prompt.context', context())
+    await h.dispatch('tool.call', { ...access('Read', '/repo/.claude/rules/ts.md'), ...(partial ? { limit: 1 } : {}) })
+    const result = await h.dispatch('tool.call', access())
+    assert.equal(result.context?.length ?? 0, partial ? 1 : 0)
+  }
+})
+
+test('unchanged discovery does not repeatedly invalidate prompt context', async () => {
+  const h = await harness({ files: { '/repo/.claude/rules/one.md': 'One.' } })
+  await h.dispatch('prompt.context', context())
+  const before = h.state.invalidated.length
+  await h.dispatch('tool.call', access())
+  await h.dispatch('tool.call', access())
+  assert.equal(h.state.invalidated.length, before)
+})
+
+test('nested globs are relative to their own rule base before any match has been sent', async () => {
+  const h = await harness({ files: { '/repo/pkg/.claude/rules/ts.md': '---\npaths: src/**\n---\nPackage.' } })
+  await h.dispatch('prompt.context', context())
+  assert.equal((await h.dispatch('tool.call', access('Read', '/repo/pkg/README.md'))).context, undefined)
+  assert.equal((await h.dispatch('tool.call', access('Read', '/repo/src/app.ts'))).context, undefined)
+  assert.equal((await h.dispatch('tool.call', access('Read', '/repo/pkg/src/app.ts'))).context.length, 1)
+})
+
+test('a removed file can be restored and its same-content frame delivered again', async () => {
+  const path = '/repo/.claude/rules/ts.md'
+  const content = '---\npaths: src/**\n---\nScoped.'
+  const h = await harness({ files: { [path]: content } })
+  await h.dispatch('prompt.context', context())
+  const input = { type: 'nested_memory', origin: { kind: 'engine' }, text: `Contents of ${path}:\n\nScoped.` }
+  assert.equal((await h.dispatch('prompt.attachment', input)).text, input.text)
+  delete h.state.files[path]
+  await h.dispatch('prompt.context', context())
+  h.state.files[path] = content
+  await h.dispatch('prompt.context', context())
+  assert.equal((await h.dispatch('prompt.attachment', input)).text, input.text)
 })
 
 test('delivery failure preserves the native tool result without executing the tool twice', async () => {

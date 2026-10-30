@@ -1,0 +1,4 @@
+{
+  "description": "Discovers recursive markdown rules in user and ancestor/nested project .claude/rules directories, parses paths frontmatter and reconciles file-backed rules through $.rules.",
+  "modules": ["./register.ts"]
+}

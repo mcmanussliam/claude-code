@@ -5,7 +5,9 @@
     "temporary-rule-poc/types",
     "temporary-rule-poc/hooks",
     "temporary-rule-poc/tests",
-    "temporary-rule-example/hooks"
+    "temporary-rule-example/hooks",
+    "default-rule-resolution/hooks",
+    "default-rule-resolution/tests"
   ],
   "exclude": []
 }

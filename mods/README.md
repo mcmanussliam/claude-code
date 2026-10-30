@@ -29,12 +29,13 @@ These are prototypes, not mods shipped in the Claude Code binary:
 | --- | --- |
 | [`temporary-rule-poc`](temporary-rule-poc) | Implements caller-scoped `$.rules` methods and delivery directly, using the package’s algorithms without importing its loader. |
 | [`temporary-rule-example`](temporary-rule-example) | Example plugin with commands to add, list, remove and clear its temporary rules through `$.rules`. |
+| [`default-rule-resolution`](default-rule-resolution) | Discovers user and project `.claude/rules` files recursively and registers unconditional or path-scoped rules through `$.rules`. |
 
 The rule PoC requires the 2.1.303 API snapshot, preserved from the original
 package under `temporary-rule-poc/api/`. Its check is
 `tsc -p mods/tsconfig.rules.json`. The existing mods keep their original
 2.1.277 snapshot and `tsc -p mods/tsconfig.json`; neither generated file has
-been hand-edited. See the temporary rules README for test limitations and the engine-side
+been hand-edited. See the two READMEs for test limitations and the engine-side
 compatibility limits that still need native differential testing.
 
 ### Native host tests

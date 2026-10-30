@@ -1,0 +1,16 @@
+{
+  "name": "default-rule-resolution",
+  "version": "0.1.0",
+  "description": "Discovers user and project .claude/rules directories and resolves unconditional and path-scoped rules through $.rules.",
+  "dependencies": ["temporary-rule-poc"],
+  "userConfig": {
+    "sources": {
+      "type": "string",
+      "title": "Rule sources",
+      "description": "Load user rules, project rules, or both.",
+      "default": "user-and-project",
+      "options": ["user-and-project", "user-only", "project-only"]
+    }
+  },
+  "author": { "name": "Liam" }
+}

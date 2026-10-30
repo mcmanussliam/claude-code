@@ -93,19 +93,22 @@ From the repository root, with a working Claude Code CLI and function hooks:
 
 ```sh
 claude plugin validate mods/temporary-rule-poc
+claude plugin validate mods/default-rule-resolution
 claude plugin test mods/temporary-rule-poc
+claude plugin test mods/default-rule-resolution
 claude --plugin-dir mods/temporary-rule-poc \
+       --plugin-dir mods/default-rule-resolution \
        --plugin-dir mods/temporary-rule-example
 ```
 
-The Node tests execute the temporary rules module, including the backing noun directly,
+The Node tests execute both real modules, including the backing noun directly,
 through a deterministic event harness. They do not substitute for native-host
 parity tests. The generated 2.1.303 API snapshot remains unmodified under
 `api/`; the existing mods keep their 2.1.277 snapshot.
 
 The installed Claude Code 2.1.312 executable aborts inside Bun before startup
 in this environment, so native module validation and native test execution
-remain unverified. See `VALIDATION.md` for
+remain unverified. See `VALIDATION.md` and the default resolver’s README for
 remaining compatibility limits.
 
 The original MIT notice is retained in `LICENSE` for logic derived from

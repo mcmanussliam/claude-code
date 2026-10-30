@@ -24,6 +24,8 @@
   "exclude": [
     "temporary-rule-poc/hooks",
     "temporary-rule-poc/tests",
+    "default-rule-resolution/hooks",
+    "default-rule-resolution/tests",
     "temporary-rule-example/hooks"
   ]
 }

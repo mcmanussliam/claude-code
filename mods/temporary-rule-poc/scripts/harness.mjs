@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 await mkdir(new URL('../.checks/', import.meta.url), { recursive: true })
 for (const [entry, outfile] of [
   ['hooks/register.ts', '.checks/temporary.mjs'],
+  ['../default-rule-resolution/hooks/register.ts', '.checks/default.mjs'],
 ]) {
   await build({ absWorkingDir: root, entryPoints: [entry], outfile, bundle: true, platform: 'neutral', format: 'esm', target: 'es2023' })
 }
@@ -30,8 +31,9 @@ function matches(matcher, input) {
   })
 }
 
-export async function harness({ store = new Map(), env = {}, files = {}, links = {}, settings = {}, sources } = {}) {
+export async function harness({ store = new Map(), env = {}, withDefault = true, order = 'default-first', files = {}, links = {}, settings = {}, sources } = {}) {
   const temporary = await import(new URL(`../.checks/temporary.mjs?instance=${sequence++}`, import.meta.url))
+  const defaults = await import(new URL(`../.checks/default.mjs?instance=${sequence++}`, import.meta.url))
   const hooks = new Map()
   let registering = 'temporary-rule-poc'
   function on(event, matcher, handler) {
@@ -52,12 +54,25 @@ export async function harness({ store = new Map(), env = {}, files = {}, links =
     }
   }
 
+  const loadDefault = () => {
+    registering = 'default-rule-resolution';
+    defaults.register(on, { sources })
+  }
+
   const loadTemporary = () => {
     registering = 'temporary-rule-poc';
     temporary.register(on)
   }
 
+  if (withDefault && order === 'default-first') {
+    loadDefault()
+  }
+
   loadTemporary()
+  if (withDefault && order !== 'default-first') {
+    loadDefault()
+  }
+
   const state = { sessionId: 's1', root: '/repo', cwd: '/repo', env, toolResult: { result: {}, text: 'ok' }, invalidated: [], files, links, settings, failStore: false, toolCalls: 0 }
   const real = path => {
     for (const [link, target] of Object.entries(state.links)) {
@@ -218,7 +233,7 @@ export async function harness({ store = new Map(), env = {}, files = {}, links =
     },
   ]))
 
-  engine = await dispatch('engine.create', { plugins: ['temporary-rule-poc'] })
+  engine = await dispatch('engine.create', { plugins: ['temporary-rule-poc', 'default-rule-resolution'] })
   return { api, dispatch, state, store, engine }
 }
 
